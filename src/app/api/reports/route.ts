@@ -6,6 +6,7 @@ import { analyzeReport } from "@/lib/ai/analyzer";
 import { uploadFile } from "@/lib/supabase/storage";
 import { checkRateLimit, getClientIP, createRateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 import { invalidateReportCache } from "@/lib/cache";
+import { validateCsrf } from "@/lib/csrf";
 
 // Query params schema for GET
 const querySchema = z.object({
@@ -98,6 +99,10 @@ export async function GET(request: NextRequest) {
 
 // POST - Upload and analyze a single report
 export async function POST(request: NextRequest) {
+  // CSRF protection
+  const csrfError = validateCsrf(request);
+  if (csrfError) return csrfError;
+
   // Rate limiting (stricter for uploads)
   const clientIP = getClientIP(request);
   const rateLimitResult = await checkRateLimit(`reports:upload:${clientIP}`, RATE_LIMITS.upload);
@@ -253,11 +258,43 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', report.id);
 
-      return NextResponse.json({
-        data: report,
-        warning:
-          "File uploaded but text extraction failed. If this is a scanned PDF, please upload a text-based PDF or DOCX.",
-      });
+      // Return 422 (Unprocessable Entity) - file was uploaded but couldn't be processed
+      return NextResponse.json(
+        {
+          error: "Text extraction failed",
+          message: "File uploaded but text extraction failed. If this is a scanned PDF, please upload a text-based PDF or DOCX.",
+          reportId: report.id,
+        },
+        { status: 422 }
+      );
+    }
+
+    // Check AI analysis rate limit (separate from upload limit)
+    const aiRateLimitResult = await checkRateLimit(
+      `reports:ai:${clientIP}`,
+      RATE_LIMITS.aiAnalysis
+    );
+    if (!aiRateLimitResult.success) {
+      // Update report to show rate limited status
+      await supabase
+        .from('reports')
+        .update({
+          ai_analysis: {
+            status: "rate_limited",
+            error: "AI analysis rate limit exceeded. Please try again later.",
+          },
+        })
+        .eq('id', report.id);
+
+      return NextResponse.json(
+        {
+          error: "AI analysis rate limit exceeded",
+          message: "Too many AI analysis requests. Please wait before uploading more reports.",
+          reportId: report.id,
+          retryAfter: Math.ceil((aiRateLimitResult.resetTime - Date.now()) / 1000),
+        },
+        { status: 429 }
+      );
     }
 
     // Analyze with AI (doctors are global, no organizationId needed)
@@ -352,22 +389,30 @@ export async function POST(request: NextRequest) {
         message: "Report uploaded and analyzed successfully",
       });
     } catch (analysisError) {
-      console.error("AI analysis error:", analysisError);
+      const errorMessage =
+        analysisError instanceof Error ? analysisError.message : String(analysisError);
+      console.error("AI analysis error:", errorMessage);
 
       await supabase
         .from('reports')
         .update({
           ai_analysis: {
             status: "failed",
-            error: "AI analysis failed",
+            error: `AI analysis failed: ${errorMessage}`,
+            failed_at: new Date().toISOString(),
           },
         })
         .eq('id', report.id);
 
-      return NextResponse.json({
-        data: report,
-        warning: "File uploaded but AI analysis failed",
-      });
+      // Return 422 (Unprocessable Entity) - file was uploaded but AI analysis failed
+      return NextResponse.json(
+        {
+          error: "AI analysis failed",
+          message: "File uploaded but AI analysis failed. Please try again or contact support.",
+          reportId: report.id,
+        },
+        { status: 422 }
+      );
     }
   } catch (error) {
     console.error("Reports POST error:", error);

@@ -6,8 +6,15 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Result type for doctor fetch to distinguish between "no doctors" and "fetch failed"
+interface DoctorFetchResult {
+  doctors: Doctor[];
+  fetchFailed: boolean;
+  error?: string;
+}
+
 // Fetch all active doctors from Supabase (global - shared across all organizations)
-async function fetchAllDoctors(): Promise<Doctor[]> {
+async function fetchAllDoctors(): Promise<DoctorFetchResult> {
   try {
     const supabase = await createClient();
     const { data, error } = await supabase
@@ -18,12 +25,25 @@ async function fetchAllDoctors(): Promise<Doctor[]> {
 
     if (error) {
       console.error("Error fetching doctors:", error);
-      return [];
+      return {
+        doctors: [],
+        fetchFailed: true,
+        error: error.message,
+      };
     }
-    return data || [];
+
+    return {
+      doctors: data || [],
+      fetchFailed: false,
+    };
   } catch (error) {
-    console.error("Error fetching doctors:", error);
-    return [];
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error fetching doctors:", errorMessage);
+    return {
+      doctors: [],
+      fetchFailed: true,
+      error: errorMessage,
+    };
   }
 }
 
@@ -83,6 +103,43 @@ export interface MedicalCondition {
   description: string;
   severity: "mild" | "moderate" | "severe";
   icdCode?: string; // International Classification of Diseases code
+}
+
+/**
+ * Validate ICD-10 code format
+ * ICD-10 codes follow patterns like: A00, A00.0, A00.00, Z00.00, etc.
+ * Format: Letter + 2 digits, optionally followed by . and 1-2 digits
+ */
+function isValidIcdCode(code: string | undefined): boolean {
+  if (!code) return true; // Optional field
+  // ICD-10 pattern: Letter A-Z, followed by 2 digits, optionally .XX
+  const icdPattern = /^[A-Z]\d{2}(\.\d{1,2})?$/i;
+  return icdPattern.test(code.trim());
+}
+
+/**
+ * Sanitize and validate ICD code from AI response
+ */
+function sanitizeIcdCode(code: unknown): string | undefined {
+  if (typeof code !== 'string' || !code.trim()) {
+    return undefined;
+  }
+
+  const trimmed = code.trim().toUpperCase();
+
+  if (isValidIcdCode(trimmed)) {
+    return trimmed;
+  }
+
+  // Try to extract valid ICD code from string (AI sometimes adds descriptions)
+  const match = trimmed.match(/[A-Z]\d{2}(\.\d{1,2})?/);
+  if (match) {
+    console.warn(`[AI] Extracted ICD code "${match[0]}" from "${trimmed}"`);
+    return match[0];
+  }
+
+  console.warn(`[AI] Invalid ICD code format: "${trimmed}"`);
+  return undefined;
 }
 
 export interface SuggestedDoctor {
@@ -248,11 +305,23 @@ export async function analyzeReport(
   const startTime = Date.now();
 
   // Fetch all doctors (global pool shared across all organizations)
-  const allDoctors = await fetchAllDoctors();
+  const doctorResult = await fetchAllDoctors();
+
+  if (doctorResult.fetchFailed) {
+    console.warn(`[AI] Doctor fetch failed: ${doctorResult.error}. Analysis will proceed without doctor recommendations.`);
+  }
+
+  const allDoctors = doctorResult.doctors;
 
   // Check if API key is configured
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn("ANTHROPIC_API_KEY not configured, using mock analysis");
+    // In production, fail loudly - don't serve mock data
+    if (process.env.NODE_ENV === 'production') {
+      console.error("CRITICAL: ANTHROPIC_API_KEY not configured in production");
+      throw new Error("AI analysis service is not configured. Please contact support.");
+    }
+    // In development, warn and use mock
+    console.warn("ANTHROPIC_API_KEY not configured, using mock analysis (development only)");
     return generateMockAnalysis(reportText, allDoctors);
   }
 
@@ -324,7 +393,12 @@ export async function analyzeReport(
 
     // Include Muaina Interpretation for ALL reports
     if (analysis.muainaInterpretation) {
-      result.muainaInterpretation = analysis.muainaInterpretation;
+      // Validate and sanitize ICD code from AI response
+      const muaina = analysis.muainaInterpretation;
+      if (muaina.medicalCondition) {
+        muaina.medicalCondition.icdCode = sanitizeIcdCode(muaina.medicalCondition.icdCode);
+      }
+      result.muainaInterpretation = muaina;
     }
 
     return result;

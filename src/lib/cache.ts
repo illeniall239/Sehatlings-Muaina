@@ -139,7 +139,11 @@ class MemoryCache implements CacheProvider {
   }
 
   async deletePattern(pattern: string): Promise<void> {
-    const regex = new RegExp(pattern.replace(/\*/g, ".*"));
+    // Escape regex special characters except *, then convert * to .*
+    const escapedPattern = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape special chars
+      .replace(/\*/g, '.*'); // Convert glob * to regex .*
+    const regex = new RegExp(`^${escapedPattern}$`);
     for (const key of this.store.keys()) {
       if (regex.test(key)) {
         this.store.delete(key);
@@ -192,8 +196,15 @@ class HybridCache implements CacheProvider {
       try {
         const value = await this.redis.get<T>(key);
         if (value !== null) return value;
-      } catch {
-        // Redis failed, continue to memory
+      } catch (error) {
+        // Redis failed, log and continue to memory
+        console.warn(`[Cache] Redis get failed for key "${key}", falling back to memory:`, error);
+        this.redisAvailable = false; // Disable Redis temporarily
+        // Re-enable after 30 seconds
+        setTimeout(() => {
+          this.redisAvailable = true;
+          console.log("[Cache] Re-enabling Redis connection");
+        }, 30000);
       }
     }
 
@@ -209,8 +220,9 @@ class HybridCache implements CacheProvider {
     if (this.redis && this.redisAvailable) {
       try {
         await this.redis.set(key, value, ttlSeconds);
-      } catch {
-        // Redis write failed, memory cache still has the value
+      } catch (error) {
+        // Redis write failed, log warning
+        console.warn(`[Cache] Redis set failed for key "${key}":`, error);
       }
     }
   }

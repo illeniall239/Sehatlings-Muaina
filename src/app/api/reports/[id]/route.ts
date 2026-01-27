@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 import { invalidateReportCache } from "@/lib/cache";
 import { deleteFile } from "@/lib/supabase/storage";
+import { validateCsrf } from "@/lib/csrf";
 
 // Schema for PATCH request
 const updateSchema = z.object({
@@ -76,6 +77,10 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // CSRF protection
+  const csrfError = validateCsrf(request);
+  if (csrfError) return csrfError;
+
   try {
     const { id } = await params;
     const supabase = await createClient();
@@ -205,6 +210,10 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // CSRF protection
+  const csrfError = validateCsrf(request);
+  if (csrfError) return csrfError;
+
   try {
     const { id } = await params;
     const supabase = await createClient();

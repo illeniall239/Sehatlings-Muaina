@@ -147,20 +147,76 @@ export const RATE_LIMITS = {
 } as const;
 
 /**
+ * Validate IP address format (basic validation)
+ */
+function isValidIP(ip: string): boolean {
+  // IPv4 pattern
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  // IPv6 pattern (simplified)
+  const ipv6Pattern = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+
+  if (ipv4Pattern.test(ip)) {
+    // Validate each octet is 0-255
+    const octets = ip.split('.').map(Number);
+    return octets.every(o => o >= 0 && o <= 255);
+  }
+
+  return ipv6Pattern.test(ip);
+}
+
+/**
  * Get client IP from request headers
+ *
+ * Security notes:
+ * - X-Forwarded-For can be spoofed by clients
+ * - In production behind a trusted proxy (Vercel, Cloudflare), the first IP is usually the client
+ * - We validate IP format to prevent injection attacks
+ * - For shared IPs (corporate proxies), users may share rate limits
  */
 export function getClientIP(request: Request): string {
+  // Try X-Forwarded-For first (set by proxies like Vercel, Cloudflare)
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
-    return forwardedFor.split(",")[0].trim();
+    // Take the first IP (client IP when behind trusted proxy)
+    const clientIP = forwardedFor.split(",")[0].trim();
+
+    // Validate IP format to prevent injection
+    if (isValidIP(clientIP)) {
+      return clientIP;
+    }
+    console.warn(`[RateLimit] Invalid IP format in X-Forwarded-For: ${clientIP}`);
   }
 
+  // Try X-Real-IP (set by some proxies)
   const realIP = request.headers.get("x-real-ip");
   if (realIP) {
-    return realIP;
+    const trimmedIP = realIP.trim();
+    if (isValidIP(trimmedIP)) {
+      return trimmedIP;
+    }
+    console.warn(`[RateLimit] Invalid IP format in X-Real-IP: ${trimmedIP}`);
   }
 
-  return "unknown";
+  // Fallback - use a hash of user agent + accept headers as fingerprint
+  // This provides some differentiation for clients without valid IP
+  const userAgent = request.headers.get("user-agent") || "";
+  const accept = request.headers.get("accept") || "";
+  const fingerprint = `unknown-${hashString(userAgent + accept)}`;
+
+  return fingerprint;
+}
+
+/**
+ * Simple string hash for fingerprinting
+ */
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16).substring(0, 8);
 }
 
 /**

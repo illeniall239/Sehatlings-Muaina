@@ -79,11 +79,16 @@ export async function POST(request: NextRequest) {
       organization = orgData;
     }
 
-    // Update last login
-    await supabase
+    // Update last login (don't block response on this)
+    supabase
       .from('users')
       .update({ last_login: new Date().toISOString() })
-      .eq('id', userProfile.id);
+      .eq('id', userProfile.id)
+      .then(({ error }) => {
+        if (error) {
+          console.warn('Failed to update last_login:', error.message);
+        }
+      });
 
     const profile = userProfile.profile as { first_name: string; last_name: string };
 

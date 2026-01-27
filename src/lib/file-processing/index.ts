@@ -8,14 +8,47 @@ export interface ExtractionResult {
   metadata?: Record<string, unknown>;
 }
 
+// Default timeout for file extraction (2 minutes)
+const EXTRACTION_TIMEOUT_MS = 120000;
+
+/**
+ * Wraps a promise with a timeout
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  operation: string
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${timeoutMs / 1000} seconds`));
+    }, timeoutMs);
+
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 export async function extractTextFromFile(
   buffer: Buffer,
-  fileType: "pdf" | "docx"
+  fileType: "pdf" | "docx",
+  timeoutMs: number = EXTRACTION_TIMEOUT_MS
 ): Promise<ExtractionResult> {
   if (fileType === "pdf") {
     let pdfError: string | null = null;
     try {
-      const result = await extractTextFromPDF(buffer);
+      const result = await withTimeout(
+        extractTextFromPDF(buffer),
+        timeoutMs,
+        "PDF text extraction"
+      );
       if (result.text && result.text.trim().length >= 50) {
         return {
           text: result.text,
@@ -30,7 +63,11 @@ export async function extractTextFromFile(
 
     // Fallback to OCR for scanned PDFs or empty text
     try {
-      const ocrResult = await extractTextFromPdfWithOCR(buffer);
+      const ocrResult = await withTimeout(
+        extractTextFromPdfWithOCR(buffer),
+        timeoutMs,
+        "PDF OCR extraction"
+      );
       if (!ocrResult.text || ocrResult.text.trim().length === 0) {
         throw new Error("OCR could not extract any text from the PDF.");
       }
@@ -50,7 +87,11 @@ export async function extractTextFromFile(
       );
     }
   } else {
-    const result = await extractTextFromDOCX(buffer);
+    const result = await withTimeout(
+      extractTextFromDOCX(buffer),
+      timeoutMs,
+      "DOCX text extraction"
+    );
     return {
       text: result.text,
       metadata: { messages: result.messages },
