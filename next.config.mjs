@@ -3,6 +3,9 @@ const nextConfig = {
   // Exclude problematic packages from server bundling
   serverExternalPackages: [
     'pdf-parse',
+    'pdfkit',
+    'fontkit',
+    'linebreak',
     'canvas',
     '@napi-rs/canvas',
     '@react-pdf/renderer',

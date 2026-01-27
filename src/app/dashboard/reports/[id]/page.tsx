@@ -767,51 +767,46 @@ export default function ReportDetailPage() {
               <CardTitle className="text-lg">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {report.review.status !== "approved" && (
-                <Button
-                  className="w-full h-11"
-                  variant="success"
-                  onClick={handleApprove}
-                  disabled={isApproving}
-                >
-                  {isApproving ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ThumbsUp className="h-4 w-4" />
-                  )}
-                  Approve Report
-                </Button>
-              )}
-              {report.review.status === "approved" && (
-                <Button
-                  variant="outline"
-                  className="w-full h-11"
-                  onClick={handleRequestAdjustment}
-                  disabled={isApproving}
-                >
-                  {isApproving ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-4 w-4" />
-                  )}
-                  Request Adjustment
-                </Button>
-              )}
-              {report.muaina_interpretation && (
-                <Button
-                  variant="outline"
-                  className="w-full h-11"
-                  onClick={scrollToMuaina}
-                >
-                  <Eye className="h-4 w-4" />
-                  View Muaina Interpretation
-                </Button>
-              )}
+              {report.ai_analysis.classification !== "normal" &&
+                report.review.status !== "approved" && (
+                  <Button
+                    className="w-full h-11"
+                    variant="success"
+                    onClick={handleApprove}
+                    disabled={isApproving}
+                  >
+                    {isApproving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ThumbsUp className="h-4 w-4" />
+                    )}
+                    Approve Report
+                  </Button>
+                )}
+              {report.ai_analysis.classification !== "normal" &&
+                report.review.status === "approved" && (
+                  <Button
+                    variant="outline"
+                    className="w-full h-11"
+                    onClick={handleRequestAdjustment}
+                    disabled={isApproving}
+                  >
+                    {isApproving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-4 w-4" />
+                    )}
+                    Request Adjustment
+                  </Button>
+                )}
               <div className="space-y-1">
                 <Button
                   variant="outline"
                   className="w-full h-11"
-                  disabled={report.review.status !== "approved"}
+                  disabled={
+                    report.ai_analysis.classification !== "normal" &&
+                    report.review.status !== "approved"
+                  }
                   onClick={() => {
                     window.open(`/api/reports/${reportId}/pdf`, "_blank");
                   }}
@@ -819,11 +814,12 @@ export default function ReportDetailPage() {
                   <Download className="h-4 w-4" />
                   Download PDF Report
                 </Button>
-                {report.review.status !== "approved" && (
-                  <p className="text-xs text-neutral-500 text-center">
-                    PDF download available after approval
-                  </p>
-                )}
+                {report.ai_analysis.classification !== "normal" &&
+                  report.review.status !== "approved" && (
+                    <p className="text-xs text-neutral-500 text-center">
+                      PDF download available after approval
+                    </p>
+                  )}
               </div>
             </CardContent>
           </Card>
