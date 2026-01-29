@@ -730,7 +730,7 @@ export default function ReportDetailPage() {
                       {report.muaina_interpretation.doctor_recommendations.map(
                         (rec, i) => (
                           <div
-                            key={`rec-${rec.priority}-${i}`}
+                            key={`rec-${rec.specialty}-${i}`}
                             className="flex items-center gap-3 p-3 rounded-xl bg-neutral-50 border border-neutral-200"
                           >
                             <Badge
