@@ -167,6 +167,13 @@ export function useAuth() {
     try {
       const { data } = supabase.auth.onAuthStateChange(
         async (event, session) => {
+          // Skip INITIAL_SESSION - initAuth() already handles the initial load.
+          // Without this, both initAuth and this listener race to fetchProfile,
+          // causing intermittent null profile / infinite loading.
+          if (event === 'INITIAL_SESSION') {
+            return;
+          }
+
           if (session?.user) {
             const profile = await fetchProfile(session.user.id);
             setState({
