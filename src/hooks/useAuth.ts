@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@/lib/supabase/client';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
@@ -40,7 +40,8 @@ export function useAuth() {
     error: null,
   });
   const router = useRouter();
-  const supabase = createClient();
+  // Memoize client to prevent useEffect from re-running on every render
+  const supabase = useMemo(() => createClient(), []);
 
   // Prevent race conditions with concurrent fetchProfile calls
   const fetchInProgressRef = useRef<string | null>(null);
