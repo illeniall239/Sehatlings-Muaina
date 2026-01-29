@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@/lib/supabase/client';
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
@@ -40,90 +40,68 @@ export function useAuth() {
     error: null,
   });
   const router = useRouter();
-  // Memoize client to prevent useEffect from re-running on every render
-  const supabase = useMemo(() => createClient(), []);
-
-  // Prevent race conditions with concurrent fetchProfile calls
-  const fetchInProgressRef = useRef<string | null>(null);
-
-  const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
-    // Prevent concurrent fetches for the same user
-    if (fetchInProgressRef.current === userId) {
-      return null;
-    }
-    fetchInProgressRef.current = userId;
-
-    try {
-      // First fetch the user profile
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, email, role, profile, organization_id')
-        .eq('id', userId)
-        .single();
-
-      if (userError || !userData) {
-        console.error('Error fetching user profile:', {
-          message: userError?.message,
-          code: userError?.code,
-          details: userError?.details,
-          hint: userError?.hint,
-        });
-        // Check if this is an RLS issue
-        if (userError?.code === 'PGRST116' || userError?.message?.includes('recursion')) {
-          console.warn(
-            'Profile fetch failed due to RLS policy. Run supabase-rls-complete-fix.sql in Supabase SQL Editor.'
-          );
-        }
-        return null;
-      }
-
-      // Then fetch the organization separately
-      let organization = null;
-      if (userData.organization_id) {
-        const { data: orgData, error: orgError } = await supabase
-          .from('organizations')
-          .select('id, name, slug')
-          .eq('id', userData.organization_id)
-          .single();
-
-        if (orgError) {
-          console.warn('Failed to fetch organization:', {
-            message: orgError.message,
-            code: orgError.code,
-            organizationId: userData.organization_id,
-          });
-          // Continue without organization - don't fail the whole profile
-        } else if (orgData) {
-          organization = orgData;
-        }
-      }
-
-      return {
-        id: userData.id,
-        email: userData.email,
-        role: userData.role,
-        profile: userData.profile as UserProfile['profile'],
-        organization_id: userData.organization_id,
-        organization: organization as UserProfile['organization'],
-      };
-    } finally {
-      fetchInProgressRef.current = null;
-    }
-  }, [supabase]);
+  // Use ref for router to avoid it triggering useEffect re-runs
+  const routerRef = useRef(router);
+  routerRef.current = router;
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    let isMounted = true;
+    // createBrowserClient returns a singleton, safe to call here
+    const supabase = createClient();
 
-    const initAuth = async () => {
+    async function fetchProfile(userId: string): Promise<UserProfile | null> {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id, email, role, profile, organization_id')
+          .eq('id', userId)
+          .single();
 
-        if (!isMounted) return;
+        if (userError || !userData) {
+          console.error('Error fetching user profile:', {
+            message: userError?.message,
+            code: userError?.code,
+            details: userError?.details,
+            hint: userError?.hint,
+          });
+          return null;
+        }
 
+        let organization = null;
+        if (userData.organization_id) {
+          const { data: orgData, error: orgError } = await supabase
+            .from('organizations')
+            .select('id, name, slug')
+            .eq('id', userData.organization_id)
+            .single();
+
+          if (orgError) {
+            console.warn('Failed to fetch organization:', orgError.message);
+          } else if (orgData) {
+            organization = orgData;
+          }
+        }
+
+        return {
+          id: userData.id,
+          email: userData.email,
+          role: userData.role,
+          profile: userData.profile as UserProfile['profile'],
+          organization_id: userData.organization_id,
+          organization: organization as UserProfile['organization'],
+        };
+      } catch (error) {
+        console.error('Profile fetch error:', error);
+        return null;
+      }
+    }
+
+    // Use onAuthStateChange as the sole auth mechanism.
+    // It fires INITIAL_SESSION immediately with the current session,
+    // then fires for all subsequent auth events (sign in, sign out, token refresh).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
         if (session?.user) {
           const profile = await fetchProfile(session.user.id);
-          if (!isMounted) return;
           setState({
             user: session.user,
             profile,
@@ -140,83 +118,25 @@ export function useAuth() {
             error: null,
           });
         }
-      } catch (error) {
-        console.error('Auth init error:', error);
-        if (isMounted) {
-          setState(prev => ({ ...prev, loading: false, error: 'Authentication failed' }));
+
+        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+          routerRef.current.refresh();
         }
       }
-    };
-
-    // Timeout to prevent infinite loading - show error after 15 seconds
-    timeoutId = setTimeout(() => {
-      setState(prev => {
-        if (prev.loading) {
-          console.error('Auth initialization timed out');
-          return { ...prev, loading: false, error: 'Connection timed out. Please refresh the page.' };
-        }
-        return prev;
-      });
-    }, 15000);
-
-    initAuth();
-
-    // Listen for auth changes
-    let subscription: { unsubscribe: () => void } | null = null;
-
-    try {
-      const { data } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          // Skip INITIAL_SESSION - initAuth() already handles the initial load.
-          // Without this, both initAuth and this listener race to fetchProfile,
-          // causing intermittent null profile / infinite loading.
-          if (event === 'INITIAL_SESSION') {
-            return;
-          }
-
-          if (session?.user) {
-            const profile = await fetchProfile(session.user.id);
-            setState({
-              user: session.user,
-              profile,
-              session,
-              loading: false,
-              error: profile ? null : 'Failed to load user profile',
-            });
-          } else {
-            setState({
-              user: null,
-              profile: null,
-              session: null,
-              loading: false,
-              error: null,
-            });
-          }
-
-          // Refresh page data on sign in/out
-          if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-            router.refresh();
-          }
-        }
-      );
-      subscription = data.subscription;
-    } catch (error) {
-      console.error('Failed to set up auth state listener:', error);
-    }
+    );
 
     return () => {
-      isMounted = false;
-      clearTimeout(timeoutId);
-      // Safe cleanup - only unsubscribe if subscription was created
-      if (subscription) {
-        subscription.unsubscribe();
-      }
+      subscription.unsubscribe();
     };
-  }, [supabase, fetchProfile, router]);
+    // Empty deps - run once on mount. Router accessed via ref.
+    // createBrowserClient returns a singleton so no dependency needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const signIn = async (email: string, password: string) => {
+    const supabase = createClient();
     setState(prev => ({ ...prev, loading: true }));
-    
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -235,6 +155,7 @@ export function useAuth() {
     password: string,
     metadata?: { firstName?: string; lastName?: string }
   ) => {
+    const supabase = createClient();
     setState(prev => ({ ...prev, loading: true }));
 
     const { data, error } = await supabase.auth.signUp({
@@ -254,6 +175,7 @@ export function useAuth() {
   };
 
   const signOut = async () => {
+    const supabase = createClient();
     setState(prev => ({ ...prev, loading: true }));
 
     try {
@@ -265,7 +187,6 @@ export function useAuth() {
         return { error };
       }
 
-      // Clear state immediately on successful sign out
       setState({
         user: null,
         profile: null,
@@ -274,12 +195,10 @@ export function useAuth() {
         error: null,
       });
 
-      // Navigate to login
-      router.push('/login');
+      routerRef.current.push('/login');
       return { error: null };
     } catch (error) {
       console.error('Sign out exception:', error);
-      // Even on error, try to clear local state and redirect
       setState({
         user: null,
         profile: null,
@@ -287,7 +206,7 @@ export function useAuth() {
         loading: false,
         error: 'Sign out failed unexpectedly',
       });
-      router.push('/login');
+      routerRef.current.push('/login');
       return { error: error as Error };
     }
   };
