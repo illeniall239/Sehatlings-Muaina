@@ -49,7 +49,15 @@ export function validateCsrf(request: NextRequest): NextResponse | null {
 
   const origin = request.headers.get('origin');
   const referer = request.headers.get('referer');
+  const host = request.headers.get('host');
   const allowedOrigins = getAllowedOrigins();
+
+  // Add host-based origin to allowed list (standard same-origin check)
+  // If Origin matches Host, it's a legitimate same-origin request
+  if (host) {
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    allowedOrigins.push(`${protocol}://${host}`);
+  }
 
   // For same-origin requests, Origin might not be set but Referer will be
   // For cross-origin requests, Origin will be set
