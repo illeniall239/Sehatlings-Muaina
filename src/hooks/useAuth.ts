@@ -112,12 +112,18 @@ export function useAuth() {
   }, [supabase]);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    let isMounted = true;
+
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
+
+        if (!isMounted) return;
+
         if (session?.user) {
           const profile = await fetchProfile(session.user.id);
+          if (!isMounted) return;
           setState({
             user: session.user,
             profile,
@@ -136,9 +142,22 @@ export function useAuth() {
         }
       } catch (error) {
         console.error('Auth init error:', error);
-        setState(prev => ({ ...prev, loading: false, error: 'Authentication failed' }));
+        if (isMounted) {
+          setState(prev => ({ ...prev, loading: false, error: 'Authentication failed' }));
+        }
       }
     };
+
+    // Timeout to prevent infinite loading - show error after 15 seconds
+    timeoutId = setTimeout(() => {
+      setState(prev => {
+        if (prev.loading) {
+          console.error('Auth initialization timed out');
+          return { ...prev, loading: false, error: 'Connection timed out. Please refresh the page.' };
+        }
+        return prev;
+      });
+    }, 15000);
 
     initAuth();
 
@@ -179,6 +198,8 @@ export function useAuth() {
     }
 
     return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
       // Safe cleanup - only unsubscribe if subscription was created
       if (subscription) {
         subscription.unsubscribe();
