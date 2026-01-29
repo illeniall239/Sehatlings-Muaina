@@ -20,6 +20,17 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // Client-side validation
+    if (!email.trim() || !password) {
+      setError("Email and password are required");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
     setIsLoading(true);
 
     try {

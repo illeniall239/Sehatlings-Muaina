@@ -3,8 +3,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 /**
  * GET /api/organizations
- * Fetches active organizations for the signup dropdown
- * Uses admin client to bypass RLS (since signup users aren't authenticated)
+ * PUBLIC endpoint — no auth required.
+ * Fetches active organizations for the signup dropdown.
+ * Uses admin client to bypass RLS (signup users aren't authenticated yet).
+ * Only returns id, name, slug — no sensitive data exposed.
  */
 export async function GET() {
   try {

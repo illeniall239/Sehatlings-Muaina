@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ function VerifyEmailContent() {
   const [isResending, setIsResending] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
   const [error, setError] = useState("");
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     const emailParam = searchParams.get("email");
@@ -48,7 +48,8 @@ function VerifyEmailContent() {
       }
     };
     checkAuth();
-  }, [supabase, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
 
   const handleResend = async () => {
     if (!email) {

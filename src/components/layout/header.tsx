@@ -58,16 +58,17 @@ export function Header() {
         </div>
 
         {/* Notifications (placeholder) */}
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
           <Bell className="h-5 w-5 text-neutral-500" />
-          {/* Notification dot */}
-          {/* <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive-500 rounded-full" /> */}
         </Button>
 
         {/* Profile Dropdown */}
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setIsProfileOpen(!isProfileOpen)}
+            aria-expanded={isProfileOpen}
+            aria-haspopup="true"
+            aria-label="Profile menu"
             className="flex items-center gap-2 p-1.5 pr-2 rounded-lg hover:bg-neutral-100 transition-colors"
           >
             {/* Avatar */}

@@ -331,19 +331,25 @@ export async function analyzeReport(
       ? `\n\nAVAILABLE DOCTORS FOR RECOMMENDATIONS (select from this list ONLY):\n${formatDoctorsForPrompt(allDoctors)}\n\nBased on your analysis, select 1-3 most appropriate doctors from the list above. Consider specialty match, experience level, and condition urgency. Use their exact names and details as provided.`
       : "";
 
-    const modelId = "claude-sonnet-4-20250514";
-    
-    const message = await anthropic.messages.create({
-      model: modelId,
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Please analyze the following pathology report and provide your assessment:\n\n${reportText}${doctorsSection}`,
-        },
-      ],
-    });
+    const modelId = process.env.ANTHROPIC_MODEL_ID || "claude-sonnet-4-20250514";
+
+    const AI_TIMEOUT_MS = 25000; // 25s — leave buffer for Vercel's 30s limit
+    const message = await Promise.race([
+      anthropic.messages.create({
+        model: modelId,
+        max_tokens: 2048,
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: `Please analyze the following pathology report and provide your assessment:\n\n${reportText}${doctorsSection}`,
+          },
+        ],
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("AI analysis timed out")), AI_TIMEOUT_MS)
+      ),
+    ]);
 
     const content = message.content[0];
     if (content.type !== "text") {

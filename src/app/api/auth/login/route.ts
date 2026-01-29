@@ -88,7 +88,8 @@ export async function POST(request: NextRequest) {
         if (error) {
           console.warn('Failed to update last_login:', error.message);
         }
-      });
+      })
+      .catch((err) => console.error('last_login update exception:', err));
 
     const profile = userProfile.profile as { first_name: string; last_name: string };
 

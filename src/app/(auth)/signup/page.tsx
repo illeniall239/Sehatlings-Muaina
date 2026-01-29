@@ -81,27 +81,30 @@ export default function SignupPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    setIsLoading(true);
 
-    // Validate passwords match
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
-      setIsLoading(false);
+    // Client-side validation
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("First name and last name are required");
       return;
     }
-
-    // Validate password strength
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
     if (password.length < 6) {
       setError("Password must be at least 6 characters");
-      setIsLoading(false);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (!organizationId) {
+      setError("Please select an organization");
       return;
     }
 
-    if (!organizationId) {
-      setError("Please select an organization");
-      setIsLoading(false);
-      return;
-    }
+    setIsLoading(true);
 
     try {
       // Call signup API (server handles auth user + profile creation atomically)

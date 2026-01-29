@@ -463,7 +463,7 @@ export default function ReportDetailPage() {
                       const styles = getSeverityStyles(finding.severity);
                       return (
                         <div
-                          key={index}
+                          key={`finding-${finding.severity}-${index}`}
                           className={`flex items-start gap-4 p-4 rounded-xl border ${styles.bg} ${styles.border}`}
                         >
                           <CircleDot className="h-5 w-5 text-neutral-400 mt-0.5 shrink-0" />
@@ -684,7 +684,7 @@ export default function ReportDetailPage() {
                     <div className="grid gap-3">
                       {report.muaina_interpretation.suggested_doctors.map((doctor, i) => (
                         <div
-                          key={i}
+                          key={`doctor-${doctor.name}-${i}`}
                           className="p-4 rounded-xl bg-blue-50 border border-blue-200"
                         >
                           <div className="flex items-start justify-between">
@@ -730,7 +730,7 @@ export default function ReportDetailPage() {
                       {report.muaina_interpretation.doctor_recommendations.map(
                         (rec, i) => (
                           <div
-                            key={i}
+                            key={`rec-${rec.priority}-${i}`}
                             className="flex items-center gap-3 p-3 rounded-xl bg-neutral-50 border border-neutral-200"
                           >
                             <Badge

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { SupabaseProvider } from "@/components/SupabaseProvider";
 import { AuthProvider } from "@/contexts/auth-context";
 
 const inter = Inter({
@@ -31,11 +30,9 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}
       >
-        <SupabaseProvider>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
-        </SupabaseProvider>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

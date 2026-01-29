@@ -161,8 +161,8 @@ export async function GET() {
       }) || [],
     };
 
-    // Cache for 1 minute (stats change frequently when uploading)
-    await cache.set(cacheKey, statsData, CacheTTL.SHORT);
+    // Cache for 5 minutes — stats don't change frequently enough to justify 60s
+    await cache.set(cacheKey, statsData, CacheTTL.MEDIUM);
 
     return NextResponse.json({
       data: statsData,

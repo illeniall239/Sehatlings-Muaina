@@ -8,8 +8,8 @@ export interface ExtractionResult {
   metadata?: Record<string, unknown>;
 }
 
-// Default timeout for file extraction (2 minutes)
-const EXTRACTION_TIMEOUT_MS = 120000;
+// Timeout for file extraction — must fit within Vercel's 30s serverless limit
+const EXTRACTION_TIMEOUT_MS = 25000;
 
 /**
  * Wraps a promise with a timeout

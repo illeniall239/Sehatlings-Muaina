@@ -160,8 +160,14 @@ export async function GET(
       } : undefined,
     };
 
-    // Generate PDF using Node.js pdfkit (serverless compatible)
-    const pdfBuffer = await generateReportPDF(pdfData);
+    // Generate PDF with timeout (Vercel has 30s limit for serverless)
+    const PDF_TIMEOUT_MS = 25000;
+    const pdfBuffer = await Promise.race([
+      generateReportPDF(pdfData),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("PDF generation timed out")), PDF_TIMEOUT_MS)
+      ),
+    ]);
 
     // Return PDF as response
     const safeFileName = originalFile?.name?.replace(/[^a-zA-Z0-9.-]/g, "_") || "report";
