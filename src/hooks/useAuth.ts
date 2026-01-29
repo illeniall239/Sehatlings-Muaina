@@ -101,14 +101,23 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (session?.user) {
-          const profile = await fetchProfile(session.user.id);
-          setState({
+          // Immediately mark as authenticated - unblocks AuthGuard.
+          // Profile is fetched in the background so loading never hangs.
+          setState(prev => ({
+            ...prev,
             user: session.user,
-            profile,
             session,
             loading: false,
+            error: null,
+          }));
+
+          // Fetch profile in background - UI updates when ready
+          const profile = await fetchProfile(session.user.id);
+          setState(prev => ({
+            ...prev,
+            profile,
             error: profile ? null : 'Failed to load user profile',
-          });
+          }));
         } else {
           setState({
             user: null,
