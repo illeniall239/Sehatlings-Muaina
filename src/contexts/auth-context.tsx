@@ -53,17 +53,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const routerRef = useRef(router);
   routerRef.current = router;
 
+  // Refs to prevent race conditions
+  const fetchInProgressRef = useRef<string | null>(null);
+  const lastProcessedUserIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     console.log('[Auth] Initializing auth subscription...');
     const supabase = createClient();
+    let isMounted = true;
 
-    // fetchProfile now THROWS on error (for retry logic to work)
+    // Simple profile fetch without complex timeout logic
     async function fetchProfile(userId: string): Promise<UserProfile> {
       console.log('[Auth] Starting profile fetch for user:', userId);
       const startTime = Date.now();
 
-      // Simple query without AbortController (it may not be supported)
-      console.log('[Auth] Executing users table query...');
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id, email, role, profile, organization_id')
@@ -71,13 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       console.log('[Auth] Users query completed in', Date.now() - startTime, 'ms');
-      console.log('[Auth] User query result:', {
-        hasData: !!userData,
-        error: userError ? { message: userError.message, code: userError.code, hint: userError.hint } : null
-      });
 
       if (userError) {
-        throw new Error(`User fetch failed: ${userError.message} (code: ${userError.code}, hint: ${userError.hint || 'none'})`);
+        console.error('[Auth] User query error:', userError);
+        throw new Error(`User fetch failed: ${userError.message}`);
       }
 
       if (!userData) {
@@ -86,20 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       let organization = null;
       if (userData.organization_id) {
-        console.log('[Auth] Starting organization fetch for org_id:', userData.organization_id);
-        const orgStart = Date.now();
-
+        console.log('[Auth] Fetching organization:', userData.organization_id);
         const { data: orgData, error: orgError } = await supabase
           .from('organizations')
           .select('id, name, slug')
           .eq('id', userData.organization_id)
           .single();
-
-        console.log('[Auth] Organization query completed in', Date.now() - orgStart, 'ms');
-        console.log('[Auth] Organization query result:', {
-          hasData: !!orgData,
-          error: orgError ? { message: orgError.message, code: orgError.code } : null
-        });
 
         if (orgError) {
           console.warn('[Auth] Organization fetch failed (non-fatal):', orgError.message);
@@ -108,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const profile: UserProfile = {
+      return {
         id: userData.id,
         email: userData.email,
         role: userData.role,
@@ -116,62 +108,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         organization_id: userData.organization_id,
         organization: organization as UserProfile['organization'],
       };
-
-      console.log('[Auth] Profile fetch complete:', {
-        id: profile.id,
-        email: profile.email,
-        role: profile.role,
-        hasOrg: !!profile.organization
-      });
-
-      return profile;
     }
 
-    // Single subscription for the entire app.
-    // Fires INITIAL_SESSION immediately, then handles sign in/out/token refresh.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('[Auth] onAuthStateChange fired:', { event, hasSession: !!session, userId: session?.user?.id });
+        console.log('[Auth] onAuthStateChange:', { event, userId: session?.user?.id });
+
+        // Ignore if component unmounted
+        if (!isMounted) {
+          console.log('[Auth] Component unmounted, ignoring event');
+          return;
+        }
 
         if (session?.user) {
-          // Set user/session but KEEP loading:true until profile is ready
-          console.log('[Auth] Session found, setting user (loading still true)');
+          const userId = session.user.id;
+
+          // Skip if we already have profile for this user
+          if (lastProcessedUserIdRef.current === userId && state.profile?.id === userId) {
+            console.log('[Auth] Already have profile for this user, skipping');
+            return;
+          }
+
+          // Skip if fetch already in progress for this user
+          if (fetchInProgressRef.current === userId) {
+            console.log('[Auth] Fetch already in progress for this user, skipping');
+            return;
+          }
+
+          // Mark fetch as in progress
+          fetchInProgressRef.current = userId;
+
+          // Set user immediately
           setState(prev => ({
             ...prev,
             user: session.user,
             session,
             error: null,
-            // loading stays TRUE — don't release until profile ready
           }));
 
-          // Fetch profile with retry - no timeout race (queries can be slow but they complete)
-          // The retry logic handles transient failures
-          const profile = await withRetryOrNull(
-            () => fetchProfile(session.user.id),
-            {
-              maxAttempts: 3,
-              baseDelayMs: 300,
-              onRetry: (attempt, error) => {
-                console.warn(`[Auth] Profile fetch retry ${attempt}:`, error.message);
-              },
+          try {
+            console.log('[Auth] Starting profile fetch...');
+            const profile = await fetchProfile(userId);
+
+            // Only update if still mounted and this is still the current fetch
+            if (isMounted && fetchInProgressRef.current === userId) {
+              console.log('[Auth] Profile fetch successful');
+              lastProcessedUserIdRef.current = userId;
+              setState(prev => ({
+                ...prev,
+                profile,
+                loading: false,
+                error: null,
+              }));
             }
-          );
-
-          // NOW set loading:false — profile fetch complete (success or failure)
-          console.log('[Auth] Setting final state:', {
-            loading: false,
-            hasProfile: !!profile,
-            error: profile ? null : 'Failed to load user profile'
-          });
-
-          setState(prev => ({
-            ...prev,
-            profile,
-            loading: false,
-            error: profile ? null : 'Failed to load user profile',
-          }));
+          } catch (error) {
+            console.error('[Auth] Profile fetch failed:', error);
+            if (isMounted && fetchInProgressRef.current === userId) {
+              setState(prev => ({
+                ...prev,
+                profile: null,
+                loading: false,
+                error: 'Failed to load user profile',
+              }));
+            }
+          } finally {
+            if (fetchInProgressRef.current === userId) {
+              fetchInProgressRef.current = null;
+            }
+          }
         } else {
           console.log('[Auth] No session, clearing state');
+          lastProcessedUserIdRef.current = null;
+          fetchInProgressRef.current = null;
           setState({
             user: null,
             profile: null,
@@ -182,7 +190,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-          console.log('[Auth] Refreshing router for event:', event);
           routerRef.current.refresh();
         }
       }
@@ -190,6 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       console.log('[Auth] Cleaning up subscription');
+      isMounted = false;
       subscription.unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
