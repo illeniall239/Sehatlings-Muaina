@@ -4,6 +4,7 @@ import { createContext, useEffect, useState, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
+import { withRetry, withRetryOrNull } from '@/lib/utils/retry';
 
 export interface UserProfile {
   id: string;
@@ -75,17 +76,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         let organization = null;
         if (userData.organization_id) {
-          const { data: orgData, error: orgError } = await supabase
-            .from('organizations')
-            .select('id, name, slug')
-            .eq('id', userData.organization_id)
-            .single();
-
-          if (orgError) {
-            console.warn('Failed to fetch organization:', orgError.message);
-          } else if (orgData) {
-            organization = orgData;
-          }
+          // Retry organization fetch with exponential backoff
+          organization = await withRetryOrNull(
+            async () => {
+              const { data, error } = await supabase
+                .from('organizations')
+                .select('id, name, slug')
+                .eq('id', userData.organization_id)
+                .single();
+              if (error) throw error;
+              return data;
+            },
+            {
+              maxAttempts: 3,
+              baseDelayMs: 100,
+              onRetry: (attempt, error) => {
+                console.warn(`Organization fetch retry ${attempt}:`, error.message);
+              },
+            }
+          );
         }
 
         return {
@@ -107,20 +116,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (session?.user) {
-          // Immediately mark as authenticated — unblocks AuthGuard
+          // Set user/session but KEEP loading:true until profile is ready
+          // This prevents dashboard from rendering before profile is available
           setState(prev => ({
             ...prev,
             user: session.user,
             session,
-            loading: false,
             error: null,
+            // loading stays TRUE — don't release until profile ready
           }));
 
-          // Fetch profile in background — UI updates when ready
-          const profile = await fetchProfile(session.user.id);
+          // Fetch profile with retry — this is the critical data
+          const profile = await withRetryOrNull(
+            () => fetchProfile(session.user.id),
+            {
+              maxAttempts: 3,
+              baseDelayMs: 150,
+              onRetry: (attempt, error) => {
+                console.warn(`Profile fetch retry ${attempt}:`, error.message);
+              },
+            }
+          );
+
+          // NOW set loading:false — profile fetch complete (success or failure)
           setState(prev => ({
             ...prev,
             profile,
+            loading: false,
             error: profile ? null : 'Failed to load user profile',
           }));
         } else {

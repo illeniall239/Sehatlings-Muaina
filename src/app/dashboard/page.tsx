@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -51,18 +51,21 @@ function getGreeting() {
 }
 
 export default function DashboardPage() {
-  const { profile } = useAuth();
+  const { profile, user, loading: authLoading } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const retryCountRef = useRef(0);
 
   const userName = profile?.profile?.first_name
     ? `${profile.profile.first_name} ${profile.profile.last_name || ""}`.trim()
     : "Doctor";
 
-  const fetchStats = async () => {
+  const fetchStats = async (isRetry = false) => {
     setIsLoading(true);
-    setError(null);
+    if (!isRetry) {
+      setError(null);
+    }
     try {
       const response = await fetch("/api/reports/stats");
       if (!response.ok) {
@@ -70,7 +73,14 @@ export default function DashboardPage() {
       }
       const data = await response.json();
       setStats(data.data);
+      retryCountRef.current = 0; // Reset on success
     } catch (err) {
+      // Auto-retry once after a short delay
+      if (!isRetry && retryCountRef.current < 1) {
+        retryCountRef.current++;
+        setTimeout(() => fetchStats(true), 1500);
+        return; // Don't set error yet, wait for retry
+      }
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsLoading(false);
@@ -78,8 +88,28 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchStats();
-  }, []);
+    // Only fetch stats when profile is ready with organization_id
+    // This prevents race condition where dashboard fetches before auth is complete
+    if (profile?.organization_id) {
+      fetchStats();
+    }
+  }, [profile?.organization_id]);
+
+  // Show loading if auth is still loading OR if user exists but profile not yet loaded
+  if (authLoading || (user && !profile)) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="h-12 w-12 rounded-2xl bg-primary-100 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-primary-800" />
+            </div>
+          </div>
+          <p className="text-neutral-500 text-sm">Loading your profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -103,7 +133,7 @@ export default function DashboardPage() {
           <AlertTriangle className="h-7 w-7 text-destructive-600" />
         </div>
         <p className="text-destructive-600 font-medium">{error}</p>
-        <Button onClick={fetchStats} variant="outline">
+        <Button onClick={() => fetchStats()} variant="outline">
           <RefreshCw className="h-4 w-4" />
           Try Again
         </Button>
@@ -172,7 +202,7 @@ export default function DashboardPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={fetchStats}
+            onClick={() => fetchStats()}
             disabled={isLoading}
             className="text-neutral-500"
           >
