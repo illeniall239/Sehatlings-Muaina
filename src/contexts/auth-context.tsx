@@ -139,28 +139,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // loading stays TRUE — don't release until profile ready
           }));
 
-          // Fetch profile with retry and timeout protection
-          const PROFILE_TIMEOUT_MS = 15000; // 15 seconds max
-
-          const profilePromise = withRetryOrNull(
+          // Fetch profile with retry - no timeout race (queries can be slow but they complete)
+          // The retry logic handles transient failures
+          const profile = await withRetryOrNull(
             () => fetchProfile(session.user.id),
             {
               maxAttempts: 3,
-              baseDelayMs: 200,
+              baseDelayMs: 300,
               onRetry: (attempt, error) => {
                 console.warn(`[Auth] Profile fetch retry ${attempt}:`, error.message);
               },
             }
           );
-
-          const timeoutPromise = new Promise<null>((resolve) => {
-            setTimeout(() => {
-              console.error('[Auth] Profile fetch timed out after 15s');
-              resolve(null);
-            }, PROFILE_TIMEOUT_MS);
-          });
-
-          const profile = await Promise.race([profilePromise, timeoutPromise]);
 
           // NOW set loading:false — profile fetch complete (success or failure)
           console.log('[Auth] Setting final state:', {
