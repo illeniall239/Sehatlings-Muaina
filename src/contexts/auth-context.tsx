@@ -60,13 +60,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // fetchProfile now THROWS on error (for retry logic to work)
     async function fetchProfile(userId: string): Promise<UserProfile> {
       console.log('[Auth] Starting profile fetch for user:', userId);
+      const startTime = Date.now();
 
+      // Simple query without AbortController (it may not be supported)
+      console.log('[Auth] Executing users table query...');
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id, email, role, profile, organization_id')
         .eq('id', userId)
         .single();
 
+      console.log('[Auth] Users query completed in', Date.now() - startTime, 'ms');
       console.log('[Auth] User query result:', {
         hasData: !!userData,
         error: userError ? { message: userError.message, code: userError.code, hint: userError.hint } : null
@@ -83,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let organization = null;
       if (userData.organization_id) {
         console.log('[Auth] Starting organization fetch for org_id:', userData.organization_id);
+        const orgStart = Date.now();
 
         const { data: orgData, error: orgError } = await supabase
           .from('organizations')
@@ -90,13 +95,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('id', userData.organization_id)
           .single();
 
+        console.log('[Auth] Organization query completed in', Date.now() - orgStart, 'ms');
         console.log('[Auth] Organization query result:', {
           hasData: !!orgData,
           error: orgError ? { message: orgError.message, code: orgError.code } : null
         });
 
         if (orgError) {
-          // Organization fetch failure is non-fatal, just log it
           console.warn('[Auth] Organization fetch failed (non-fatal):', orgError.message);
         } else {
           organization = orgData;
