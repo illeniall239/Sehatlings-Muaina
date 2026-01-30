@@ -54,70 +54,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   routerRef.current = router;
 
   useEffect(() => {
+    console.log('[Auth] Initializing auth subscription...');
     const supabase = createClient();
 
-    async function fetchProfile(userId: string): Promise<UserProfile | null> {
-      try {
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('id, email, role, profile, organization_id')
-          .eq('id', userId)
+    // fetchProfile now THROWS on error (for retry logic to work)
+    async function fetchProfile(userId: string): Promise<UserProfile> {
+      console.log('[Auth] Starting profile fetch for user:', userId);
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, email, role, profile, organization_id')
+        .eq('id', userId)
+        .single();
+
+      console.log('[Auth] User query result:', {
+        hasData: !!userData,
+        error: userError ? { message: userError.message, code: userError.code, hint: userError.hint } : null
+      });
+
+      if (userError) {
+        throw new Error(`User fetch failed: ${userError.message} (code: ${userError.code}, hint: ${userError.hint || 'none'})`);
+      }
+
+      if (!userData) {
+        throw new Error('No user data returned from query');
+      }
+
+      let organization = null;
+      if (userData.organization_id) {
+        console.log('[Auth] Starting organization fetch for org_id:', userData.organization_id);
+
+        const { data: orgData, error: orgError } = await supabase
+          .from('organizations')
+          .select('id, name, slug')
+          .eq('id', userData.organization_id)
           .single();
 
-        if (userError || !userData) {
-          console.error('Error fetching user profile:', {
-            message: userError?.message,
-            code: userError?.code,
-            details: userError?.details,
-            hint: userError?.hint,
-          });
-          return null;
-        }
+        console.log('[Auth] Organization query result:', {
+          hasData: !!orgData,
+          error: orgError ? { message: orgError.message, code: orgError.code } : null
+        });
 
-        let organization = null;
-        if (userData.organization_id) {
-          // Retry organization fetch with exponential backoff
-          organization = await withRetryOrNull(
-            async () => {
-              const { data, error } = await supabase
-                .from('organizations')
-                .select('id, name, slug')
-                .eq('id', userData.organization_id)
-                .single();
-              if (error) throw error;
-              return data;
-            },
-            {
-              maxAttempts: 3,
-              baseDelayMs: 100,
-              onRetry: (attempt, error) => {
-                console.warn(`Organization fetch retry ${attempt}:`, error.message);
-              },
-            }
-          );
+        if (orgError) {
+          // Organization fetch failure is non-fatal, just log it
+          console.warn('[Auth] Organization fetch failed (non-fatal):', orgError.message);
+        } else {
+          organization = orgData;
         }
-
-        return {
-          id: userData.id,
-          email: userData.email,
-          role: userData.role,
-          profile: userData.profile as UserProfile['profile'],
-          organization_id: userData.organization_id,
-          organization: organization as UserProfile['organization'],
-        };
-      } catch (error) {
-        console.error('Profile fetch error:', error);
-        return null;
       }
+
+      const profile: UserProfile = {
+        id: userData.id,
+        email: userData.email,
+        role: userData.role,
+        profile: userData.profile as UserProfile['profile'],
+        organization_id: userData.organization_id,
+        organization: organization as UserProfile['organization'],
+      };
+
+      console.log('[Auth] Profile fetch complete:', {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+        hasOrg: !!profile.organization
+      });
+
+      return profile;
     }
 
     // Single subscription for the entire app.
     // Fires INITIAL_SESSION immediately, then handles sign in/out/token refresh.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('[Auth] onAuthStateChange fired:', { event, hasSession: !!session, userId: session?.user?.id });
+
         if (session?.user) {
           // Set user/session but KEEP loading:true until profile is ready
-          // This prevents dashboard from rendering before profile is available
+          console.log('[Auth] Session found, setting user (loading still true)');
           setState(prev => ({
             ...prev,
             user: session.user,
@@ -126,19 +139,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // loading stays TRUE — don't release until profile ready
           }));
 
-          // Fetch profile with retry — this is the critical data
-          const profile = await withRetryOrNull(
+          // Fetch profile with retry and timeout protection
+          const PROFILE_TIMEOUT_MS = 15000; // 15 seconds max
+
+          const profilePromise = withRetryOrNull(
             () => fetchProfile(session.user.id),
             {
               maxAttempts: 3,
-              baseDelayMs: 150,
+              baseDelayMs: 200,
               onRetry: (attempt, error) => {
-                console.warn(`Profile fetch retry ${attempt}:`, error.message);
+                console.warn(`[Auth] Profile fetch retry ${attempt}:`, error.message);
               },
             }
           );
 
+          const timeoutPromise = new Promise<null>((resolve) => {
+            setTimeout(() => {
+              console.error('[Auth] Profile fetch timed out after 15s');
+              resolve(null);
+            }, PROFILE_TIMEOUT_MS);
+          });
+
+          const profile = await Promise.race([profilePromise, timeoutPromise]);
+
           // NOW set loading:false — profile fetch complete (success or failure)
+          console.log('[Auth] Setting final state:', {
+            loading: false,
+            hasProfile: !!profile,
+            error: profile ? null : 'Failed to load user profile'
+          });
+
           setState(prev => ({
             ...prev,
             profile,
@@ -146,6 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             error: profile ? null : 'Failed to load user profile',
           }));
         } else {
+          console.log('[Auth] No session, clearing state');
           setState({
             user: null,
             profile: null,
@@ -156,12 +187,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+          console.log('[Auth] Refreshing router for event:', event);
           routerRef.current.refresh();
         }
       }
     );
 
     return () => {
+      console.log('[Auth] Cleaning up subscription');
       subscription.unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
