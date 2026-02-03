@@ -185,6 +185,13 @@ export interface AIUsageStats {
   apiCalls: number;
 }
 
+export interface PatientInfo {
+  name: string;
+  age?: number;
+  gender?: "male" | "female" | "other";
+  dob?: string;
+}
+
 export interface AnalysisResult {
   classification: "normal" | "abnormal" | "critical";
   findings: Array<{
@@ -197,17 +204,19 @@ export interface AnalysisResult {
     details: string;
   };
   muainaInterpretation?: MuainaInterpretation;
+  patientInfo?: PatientInfo;
   processingTime: number;
   usage?: AIUsageStats;
 }
 
 const SYSTEM_PROMPT = `You are a medical AI assistant specialized in analyzing pathology reports. Your role is to:
 
-1. Classify reports as NORMAL, ABNORMAL, or CRITICAL based on the findings
-2. Identify specific findings and anomalies in the report
-3. Generate a concise summary for pathologist review
-4. Flag any values outside normal reference ranges
-5. Generate a comprehensive patient-friendly "Muaina Interpretation" for ALL reports
+1. Extract patient information from the report (name, age, gender, date of birth if available)
+2. Classify reports as NORMAL, ABNORMAL, or CRITICAL based on the findings
+3. Identify specific findings and anomalies in the report
+4. Generate a concise summary for pathologist review
+5. Flag any values outside normal reference ranges
+6. Generate a comprehensive patient-friendly "Muaina Interpretation" for ALL reports
 
 Classification Guidelines:
 - NORMAL: All values within reference ranges, no concerning findings
@@ -218,6 +227,12 @@ Always be conservative in your assessment - when in doubt, classify as ABNORMAL 
 
 Respond ONLY with valid JSON in the following format:
 {
+  "patientInfo": {
+    "name": "Full name of patient as written in the report (required)",
+    "age": 45,
+    "gender": "male",
+    "dob": "1980-01-15"
+  },
   "classification": "normal" | "abnormal" | "critical",
   "findings": [
     {
@@ -396,6 +411,16 @@ export async function analyzeReport(
       processingTime: Date.now() - startTime,
       usage,
     };
+
+    // Include patient info if extracted
+    if (analysis.patientInfo?.name) {
+      result.patientInfo = {
+        name: analysis.patientInfo.name,
+        age: analysis.patientInfo.age || undefined,
+        gender: analysis.patientInfo.gender || undefined,
+        dob: analysis.patientInfo.dob || undefined,
+      };
+    }
 
     // Include Muaina Interpretation for ALL reports
     if (analysis.muainaInterpretation) {

@@ -54,7 +54,7 @@ export interface Database {
         Row: {
           id: string;
           email: string;
-          role: 'admin' | 'director' | 'pathologist' | 'technician';
+          role: 'admin' | 'director' | 'pathologist' | 'technician' | 'insurance';
           profile: {
             first_name: string;
             last_name: string;
@@ -177,6 +177,12 @@ export interface Database {
             }>;
             generated_at: string;
           } | null;
+          patient_info: {
+            name: string;
+            age?: number;
+            gender?: 'male' | 'female' | 'other';
+            dob?: string;
+          } | null;
           created_at: string;
           updated_at: string;
         };
@@ -253,6 +259,12 @@ export interface Database {
             }>;
             generated_at: string;
           } | null;
+          patient_info?: {
+            name: string;
+            age?: number;
+            gender?: 'male' | 'female' | 'other';
+            dob?: string;
+          } | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -328,6 +340,12 @@ export interface Database {
             }>;
             generated_at: string;
           } | null;
+          patient_info?: {
+            name: string;
+            age?: number;
+            gender?: 'male' | 'female' | 'other';
+            dob?: string;
+          } | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -379,3 +397,48 @@ export type Organization = Database['public']['Tables']['organizations']['Row'];
 export type User = Database['public']['Tables']['users']['Row'];
 export type Report = Database['public']['Tables']['reports']['Row'];
 export type Doctor = Database['public']['Tables']['doctors']['Row'];
+export type UserRole = User['role'];
+
+// Patient info extracted from reports
+export type PatientInfo = NonNullable<Report['patient_info']>;
+
+// Insurance summary types
+export interface InsuranceSummary {
+  patient_name: string;
+  total_reports: number;
+  date_range: {
+    from: string;
+    to: string;
+  };
+  risk_score: number; // 0-100
+  risk_level: 'low' | 'medium' | 'high';
+  risk_factors: Array<{
+    factor: string;
+    severity: 'low' | 'medium' | 'high';
+    details: string;
+  }>;
+  health_summary: string;
+  chronic_conditions: string[];
+  recommendations: string[];
+  generated_at: string;
+}
+
+// Patient search result for insurance dashboard
+export interface PatientSearchResult {
+  name: string;
+  report_count: number;
+  latest_report_date: string;
+  overall_classification: 'normal' | 'abnormal' | 'critical';
+  organization_id: string;
+}
+
+// Insurance activity log
+export interface InsuranceActivity {
+  id: string;
+  user_id: string;
+  patient_name: string;
+  organization_id: string;
+  organization_name: string | null;
+  risk_level: string | null;
+  viewed_at: string;
+}

@@ -42,7 +42,10 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [userType, setUserType] = useState<'pathologist' | 'insurance'>('pathologist');
   const router = useRouter();
+
+  const isInsurance = userType === 'insurance';
 
   // Fetch organizations on mount via API
   useEffect(() => {
@@ -99,7 +102,8 @@ export default function SignupPage() {
       setError("Passwords do not match");
       return;
     }
-    if (!organizationId) {
+    // Organization required only for pathologists
+    if (!isInsurance && !organizationId) {
       setError("Please select an organization");
       return;
     }
@@ -116,8 +120,9 @@ export default function SignupPage() {
           password,
           firstName,
           lastName,
-          organizationId,
+          organizationId: isInsurance ? undefined : organizationId,
           branch: branch || undefined,
+          role: isInsurance ? 'insurance' : 'pathologist',
         }),
       });
 
@@ -224,6 +229,24 @@ export default function SignupPage() {
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-3 pt-2 px-5">
+              {/* User Type Toggle */}
+              <div className="flex bg-neutral-100 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => setUserType('pathologist')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all duration-300 ${!isInsurance ? 'bg-primary-800 text-white shadow-md' : 'text-neutral-600 hover:text-neutral-900'}`}
+                >
+                  Pathologist
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserType('insurance')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all duration-300 ${isInsurance ? 'bg-primary-800 text-white shadow-md' : 'text-neutral-600 hover:text-neutral-900'}`}
+                >
+                  Insurance
+                </button>
+              </div>
+
               {error && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive-50 border border-destructive-200">
                   <AlertCircle className="h-4 w-4 text-destructive-600 shrink-0" />
@@ -274,75 +297,80 @@ export default function SignupPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label
-                    htmlFor="email"
-                    className="text-xs font-medium text-neutral-700"
-                  >
-                    Email
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="name@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={isLoading}
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label
-                    htmlFor="organization"
-                    className="text-xs font-medium text-neutral-700"
-                  >
-                    Organization
-                  </Label>
-                  <select
-                    id="organization"
-                    value={organizationId}
-                    onChange={(e) => setOrganizationId(e.target.value)}
-                    className={`flex h-9 w-full rounded-lg border bg-white px-3 py-1.5 text-sm transition-all duration-200 focus:border-primary-800 focus:ring-2 focus:ring-primary-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-neutral-50 ${
-                      orgsError ? "border-destructive-300 text-destructive-700" : "border-neutral-300 text-neutral-800"
-                    }`}
-                    required
-                    disabled={isLoading || orgsLoading || organizations.length === 0}
-                  >
-                    {orgsLoading ? (
-                      <option value="">Loading...</option>
-                    ) : orgsError ? (
-                      <option value="">{orgsError}</option>
-                    ) : organizations.length === 0 ? (
-                      <option value="">No organizations</option>
-                    ) : (
-                      organizations.map((org) => (
-                        <option key={org.id} value={org.id}>
-                          {org.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
-
               <div className="space-y-1">
                 <Label
-                  htmlFor="branch"
+                  htmlFor="email"
                   className="text-xs font-medium text-neutral-700"
                 >
-                  Branch Location <span className="text-neutral-400">(Optional)</span>
+                  Email
                 </Label>
                 <Input
-                  id="branch"
-                  placeholder="e.g., DHA Phase 5, Gulshan-e-Iqbal"
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
+                  id="email"
+                  type="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
                   disabled={isLoading}
                   className="h-9"
                 />
               </div>
+
+              {/* Organization & Branch - only for pathologists */}
+              {!isInsurance && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="organization"
+                        className="text-xs font-medium text-neutral-700"
+                      >
+                        Organization
+                      </Label>
+                      <select
+                        id="organization"
+                        value={organizationId}
+                        onChange={(e) => setOrganizationId(e.target.value)}
+                        className={`flex h-9 w-full rounded-lg border bg-white px-3 py-1.5 text-sm transition-all duration-200 focus:border-primary-800 focus:ring-2 focus:ring-primary-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-neutral-50 ${
+                          orgsError ? "border-destructive-300 text-destructive-700" : "border-neutral-300 text-neutral-800"
+                        }`}
+                        required
+                        disabled={isLoading || orgsLoading || organizations.length === 0}
+                      >
+                        {orgsLoading ? (
+                          <option value="">Loading...</option>
+                        ) : orgsError ? (
+                          <option value="">{orgsError}</option>
+                        ) : organizations.length === 0 ? (
+                          <option value="">No organizations</option>
+                        ) : (
+                          organizations.map((org) => (
+                            <option key={org.id} value={org.id}>
+                              {org.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="branch"
+                        className="text-xs font-medium text-neutral-700"
+                      >
+                        Branch <span className="text-neutral-400">(Optional)</span>
+                      </Label>
+                      <Input
+                        id="branch"
+                        placeholder="e.g., DHA Phase 5"
+                        value={branch}
+                        onChange={(e) => setBranch(e.target.value)}
+                        disabled={isLoading}
+                        className="h-9"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">

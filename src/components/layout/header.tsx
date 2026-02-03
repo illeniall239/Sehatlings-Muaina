@@ -49,13 +49,15 @@ export function Header() {
 
       {/* Right side - Organization, Notifications, Profile */}
       <div className="flex items-center gap-3">
-        {/* Organization Badge */}
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary-50 rounded-lg border border-primary-100">
-          <Building2 className="h-4 w-4 text-primary-700" />
-          <span className="text-sm font-medium text-primary-800 max-w-[150px] truncate">
-            {organizationName}
-          </span>
-        </div>
+        {/* Organization Badge - hidden for insurance users */}
+        {userRole !== 'insurance' && (
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary-50 rounded-lg border border-primary-100">
+            <Building2 className="h-4 w-4 text-primary-700" />
+            <span className="text-sm font-medium text-primary-800 max-w-[150px] truncate">
+              {organizationName}
+            </span>
+          </div>
+        )}
 
         {/* Notifications (placeholder) */}
         <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
@@ -91,10 +93,12 @@ export function Header() {
               <div className="px-4 py-3 border-b border-neutral-100">
                 <p className="text-sm font-semibold text-neutral-900">{userName}</p>
                 <p className="text-xs text-neutral-500 truncate">{userEmail}</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <Building2 className="h-3.5 w-3.5 text-neutral-400" />
-                  <span className="text-xs text-neutral-600 truncate">{organizationName}</span>
-                </div>
+                {userRole !== 'insurance' && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Building2 className="h-3.5 w-3.5 text-neutral-400" />
+                    <span className="text-xs text-neutral-600 truncate">{organizationName}</span>
+                  </div>
+                )}
               </div>
 
               {/* Menu Items */}

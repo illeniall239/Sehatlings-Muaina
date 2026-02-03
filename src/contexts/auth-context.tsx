@@ -31,8 +31,17 @@ interface AuthState {
   error: string | null;
 }
 
+export interface SignInResult {
+  data?: {
+    user: SupabaseUser;
+    session: Session;
+    profile: UserProfile | null;
+  };
+  error?: unknown;
+}
+
 export interface AuthContextValue extends AuthState {
-  signIn: (email: string, password: string) => Promise<{ data?: unknown; error?: unknown }>;
+  signIn: (email: string, password: string) => Promise<SignInResult>;
   signUp: (email: string, password: string, metadata?: { firstName?: string; lastName?: string }) => Promise<{ data?: unknown; error?: unknown }>;
   signOut: () => Promise<{ error: unknown }>;
   isAuthenticated: boolean;
@@ -153,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     router.refresh();
-    return { data };
+    return { data: { ...data, profile } };
   }, [fetchProfile, router]);
 
   const signUp = useCallback(async (

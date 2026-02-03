@@ -365,6 +365,16 @@ export async function POST(request: NextRequest) {
         };
       }
 
+      // Add patient info for insurance search
+      if (analysis.patientInfo?.name) {
+        updateData.patient_info = {
+          name: analysis.patientInfo.name,
+          age: analysis.patientInfo.age || null,
+          gender: analysis.patientInfo.gender || null,
+          dob: analysis.patientInfo.dob || null,
+        };
+      }
+
       // Update report with analysis results
       const { data: updatedReport, error: updateError } = await supabase
         .from('reports')
