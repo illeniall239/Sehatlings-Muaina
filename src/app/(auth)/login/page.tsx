@@ -81,9 +81,17 @@ export default function LoginPage() {
         <div className={`absolute inset-0 transition-opacity duration-500 ${isInsurance ? 'opacity-0' : 'opacity-100'}`}>
           <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-bl from-white/[0.07] to-transparent rounded-full blur-3xl" />
           <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-primary-600/20 to-transparent rounded-full blur-3xl" />
-          {/* Grid pattern */}
+          {/* Grid pattern (White for dark background) */}
           <div className="absolute inset-0 opacity-[0.03]" style={{
             backgroundImage: `linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)`,
+            backgroundSize: '40px 40px'
+          }} />
+        </div>
+
+        {/* Grid pattern (Dark for white background) */}
+        <div className={`absolute inset-0 transition-opacity duration-500 pointer-events-none ${isInsurance ? 'opacity-100' : 'opacity-0'}`}>
+          <div className="absolute inset-0" style={{
+            backgroundImage: `linear-gradient(to right, rgba(91, 2, 2, 0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(91, 2, 2, 0.04) 1px, transparent 1px)`,
             backgroundSize: '40px 40px'
           }} />
         </div>
