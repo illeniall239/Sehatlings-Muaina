@@ -230,46 +230,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract text from document
-    let extractedText = "";
-    try {
-      const extraction = await extractTextFromFile(buffer, fileType);
-      extractedText = extraction.text;
+    // For DOCX: extract text first, then analyze. For PDF: send directly to Claude.
+    let extractedText: string | null = null;
 
-      // Update report with extracted content
-      await supabase
-        .from('reports')
-        .update({
-          extracted_content: {
-            raw_text: extractedText,
-            extracted_at: new Date().toISOString(),
+    if (fileType === "docx") {
+      try {
+        const extraction = await extractTextFromFile(buffer, fileType);
+        extractedText = extraction.text;
+
+        // Update report with extracted content
+        await supabase
+          .from('reports')
+          .update({
+            extracted_content: {
+              raw_text: extractedText,
+              extracted_at: new Date().toISOString(),
+            },
+          })
+          .eq('id', report.id);
+
+      } catch (extractError) {
+        const errorMessage =
+          extractError instanceof Error ? extractError.message : String(extractError);
+        console.error("Text extraction error:", errorMessage);
+        await supabase
+          .from('reports')
+          .update({
+            ai_analysis: {
+              status: "failed",
+              error: `Failed to extract text from document. ${errorMessage}`,
+            },
+          })
+          .eq('id', report.id);
+
+        return NextResponse.json(
+          {
+            error: "Text extraction failed",
+            message: `File uploaded but text extraction failed: ${errorMessage}.`,
+            reportId: report.id,
           },
-        })
-        .eq('id', report.id);
-
-    } catch (extractError) {
-      const errorMessage =
-        extractError instanceof Error ? extractError.message : String(extractError);
-      console.error("Text extraction error:", errorMessage);
-      await supabase
-        .from('reports')
-        .update({
-          ai_analysis: {
-            status: "failed",
-            error: `Failed to extract text from document. ${errorMessage}`,
-          },
-        })
-        .eq('id', report.id);
-
-      // Return 422 (Unprocessable Entity) - file was uploaded but couldn't be processed
-      return NextResponse.json(
-        {
-          error: "Text extraction failed",
-          message: `File uploaded but text extraction failed: ${errorMessage}. If this is a scanned PDF, please upload a text-based PDF or DOCX.`,
-          reportId: report.id,
-        },
-        { status: 422 }
-      );
+          { status: 422 }
+        );
+      }
     }
 
     // Check AI analysis rate limit (separate from upload limit)
@@ -300,9 +302,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Analyze with AI (doctors are global, no organizationId needed)
+    // Analyze with AI — PDFs sent directly as documents, DOCX sent as extracted text
     try {
-      const analysis = await analyzeReport(extractedText);
+      const analysis = fileType === "pdf"
+        ? await analyzeReport(buffer, "pdf")
+        : await analyzeReport(extractedText!, "docx");
 
       // Determine review status based on classification
       const reviewStatus =

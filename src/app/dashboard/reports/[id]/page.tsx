@@ -114,6 +114,12 @@ interface Report {
       urgency: string;
     }>;
   };
+  patient_info?: {
+    name: string;
+    age?: number;
+    gender?: string;
+    dob?: string;
+  };
   created_at: string;
   updated_at: string;
 }
@@ -761,6 +767,44 @@ export default function ReportDetailPage() {
 
         {/* Right Column - Metadata & Actions */}
         <div className="space-y-6">
+          {/* Patient Details Card */}
+          {report.patient_info && (
+            <Card className="animate-fade-in">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-primary-100">
+                    <User className="h-4 w-4 text-primary-800" />
+                  </div>
+                  <CardTitle className="text-lg">Patient Details</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-neutral-500">Name</span>
+                  <span className="text-sm font-medium text-neutral-800">
+                    {report.patient_info.name}
+                  </span>
+                </div>
+                {report.patient_info.gender && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-neutral-500">Gender</span>
+                    <span className="text-sm font-medium text-neutral-800 capitalize">
+                      {report.patient_info.gender}
+                    </span>
+                  </div>
+                )}
+                {report.patient_info.age && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-neutral-500">Age</span>
+                    <span className="text-sm font-medium text-neutral-800">
+                      {report.patient_info.age} years
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Actions Card */}
           <Card className="animate-fade-in">
             <CardHeader className="pb-4">

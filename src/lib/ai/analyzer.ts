@@ -315,7 +315,8 @@ IMPORTANT:
 - Consultation should include clear timing and booking information`;
 
 export async function analyzeReport(
-  reportText: string
+  input: string | Buffer,
+  fileType?: "pdf" | "docx"
 ): Promise<AnalysisResult> {
   const startTime = Date.now();
 
@@ -336,14 +337,39 @@ export async function analyzeReport(
       throw new Error("AI analysis service is not configured. Please contact support.");
     }
     // In development, warn and use mock
+    const mockText = typeof input === "string" ? input : "PDF document (mock mode)";
     console.warn("ANTHROPIC_API_KEY not configured, using mock analysis (development only)");
-    return generateMockAnalysis(reportText, allDoctors);
+    return generateMockAnalysis(mockText, allDoctors);
   }
 
   // Build the user message with doctors list
   const doctorsSection = allDoctors.length > 0
     ? `\n\nAVAILABLE DOCTORS FOR RECOMMENDATIONS (select from this list ONLY):\n${formatDoctorsForPrompt(allDoctors)}\n\nBased on your analysis, select 1-3 most appropriate doctors from the list above. Consider specialty match, experience level, and condition urgency. Use their exact names and details as provided.`
     : "";
+
+  // Build message content — PDF sent as document, text sent as string
+  const isPdfBuffer = Buffer.isBuffer(input) && fileType === "pdf";
+  const userContent: Anthropic.Messages.ContentBlockParam[] = isPdfBuffer
+    ? [
+        {
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: input.toString("base64"),
+          },
+        },
+        {
+          type: "text",
+          text: `Please analyze this pathology report and provide your assessment.${doctorsSection}`,
+        },
+      ]
+    : [
+        {
+          type: "text",
+          text: `Please analyze the following pathology report and provide your assessment:\n\n${input as string}${doctorsSection}`,
+        },
+      ];
 
   const modelId = process.env.ANTHROPIC_MODEL_ID || "claude-sonnet-4-20250514";
   const AI_TIMEOUT_MS = 45000; // 45s — allow more time for large responses
@@ -363,7 +389,7 @@ export async function analyzeReport(
           messages: [
             {
               role: "user",
-              content: `Please analyze the following pathology report and provide your assessment:\n\n${reportText}${doctorsSection}`,
+              content: userContent,
             },
           ],
         }),
