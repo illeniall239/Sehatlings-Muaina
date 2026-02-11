@@ -8,6 +8,9 @@ import { checkRateLimit, getClientIP, createRateLimitResponse, RATE_LIMITS } fro
 import { invalidateReportCache } from "@/lib/cache";
 import { validateCsrf } from "@/lib/csrf";
 
+// Allow up to 60s for this route (upload + text extraction + AI analysis)
+export const maxDuration = 60;
+
 // Query params schema for GET
 const querySchema = z.object({
   page: z.coerce.number().default(1),
@@ -262,7 +265,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "Text extraction failed",
-          message: "File uploaded but text extraction failed. If this is a scanned PDF, please upload a text-based PDF or DOCX.",
+          message: `File uploaded but text extraction failed: ${errorMessage}. If this is a scanned PDF, please upload a text-based PDF or DOCX.`,
           reportId: report.id,
         },
         { status: 422 }
@@ -418,7 +421,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "AI analysis failed",
-          message: "File uploaded but AI analysis failed. Please try again or contact support.",
+          message: `File uploaded but AI analysis failed: ${errorMessage}. Please try again or contact support.`,
           reportId: report.id,
         },
         { status: 422 }

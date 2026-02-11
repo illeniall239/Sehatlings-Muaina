@@ -137,8 +137,8 @@ export default function UploadPage() {
         stopProgressAnimation();
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || "Upload failed");
+          const errorData = await response.json();
+          throw new Error(errorData.message || errorData.error || "Upload failed");
         }
 
         const data = await response.json();

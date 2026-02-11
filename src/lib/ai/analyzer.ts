@@ -340,105 +340,136 @@ export async function analyzeReport(
     return generateMockAnalysis(reportText, allDoctors);
   }
 
-  try {
-    // Build the user message with doctors list
-    const doctorsSection = allDoctors.length > 0
-      ? `\n\nAVAILABLE DOCTORS FOR RECOMMENDATIONS (select from this list ONLY):\n${formatDoctorsForPrompt(allDoctors)}\n\nBased on your analysis, select 1-3 most appropriate doctors from the list above. Consider specialty match, experience level, and condition urgency. Use their exact names and details as provided.`
-      : "";
+  // Build the user message with doctors list
+  const doctorsSection = allDoctors.length > 0
+    ? `\n\nAVAILABLE DOCTORS FOR RECOMMENDATIONS (select from this list ONLY):\n${formatDoctorsForPrompt(allDoctors)}\n\nBased on your analysis, select 1-3 most appropriate doctors from the list above. Consider specialty match, experience level, and condition urgency. Use their exact names and details as provided.`
+    : "";
 
-    const modelId = process.env.ANTHROPIC_MODEL_ID || "claude-sonnet-4-20250514";
+  const modelId = process.env.ANTHROPIC_MODEL_ID || "claude-sonnet-4-20250514";
+  const AI_TIMEOUT_MS = 45000; // 45s — allow more time for large responses
+  const MAX_RETRIES = 2; // Total attempts (1 initial + 1 retry)
 
-    const AI_TIMEOUT_MS = 25000; // 25s — leave buffer for Vercel's 30s limit
-    const message = await Promise.race([
-      anthropic.messages.create({
-        model: modelId,
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: `Please analyze the following pathology report and provide your assessment:\n\n${reportText}${doctorsSection}`,
-          },
-        ],
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("AI analysis timed out")), AI_TIMEOUT_MS)
-      ),
-    ]);
+  let lastError: Error | null = null;
+  let totalApiCalls = 0;
 
-    const content = message.content[0];
-    if (content.type !== "text") {
-      throw new Error("Unexpected response type from Claude");
-    }
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      totalApiCalls++;
+      const message = await Promise.race([
+        anthropic.messages.create({
+          model: modelId,
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: `Please analyze the following pathology report and provide your assessment:\n\n${reportText}${doctorsSection}`,
+            },
+          ],
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("AI analysis timed out")), AI_TIMEOUT_MS)
+        ),
+      ]);
 
-    // Parse the JSON response - strip markdown code blocks if present
-    let jsonText = content.text.trim();
-    if (jsonText.startsWith("```")) {
-      // Remove opening ```json or ``` and closing ```
-      jsonText = jsonText.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-    }
-    const analysis = JSON.parse(jsonText);
-
-    // Calculate usage and cost
-    // Claude Sonnet 4 pricing (as of 2025):
-    // Input: $3 per million tokens
-    // Output: $15 per million tokens
-    const inputTokens = message.usage?.input_tokens || 0;
-    const outputTokens = message.usage?.output_tokens || 0;
-    const inputCost = (inputTokens / 1_000_000) * 3;
-    const outputCost = (outputTokens / 1_000_000) * 15;
-    const totalCostUSD = inputCost + outputCost;
-
-    const usage: AIUsageStats = {
-      inputTokens,
-      outputTokens,
-      totalTokens: inputTokens + outputTokens,
-      estimatedCostUSD: Math.round(totalCostUSD * 1_000_000) / 1_000_000, // Round to 6 decimal places
-      model: modelId,
-      apiCalls: 1,
-    };
-
-    // Log usage for monitoring
-    console.log(`[AI Usage] Model: ${modelId}, Input: ${inputTokens}, Output: ${outputTokens}, Cost: $${usage.estimatedCostUSD.toFixed(6)}`);
-
-    const result: AnalysisResult = {
-      classification: analysis.classification,
-      findings: analysis.findings || [],
-      draftReport: {
-        summary: analysis.summary,
-        details: analysis.details,
-      },
-      processingTime: Date.now() - startTime,
-      usage,
-    };
-
-    // Include patient info if extracted
-    if (analysis.patientInfo?.name) {
-      result.patientInfo = {
-        name: analysis.patientInfo.name,
-        age: analysis.patientInfo.age || undefined,
-        gender: analysis.patientInfo.gender || undefined,
-        dob: analysis.patientInfo.dob || undefined,
-      };
-    }
-
-    // Include Muaina Interpretation for ALL reports
-    if (analysis.muainaInterpretation) {
-      // Validate and sanitize ICD code from AI response
-      const muaina = analysis.muainaInterpretation;
-      if (muaina.medicalCondition) {
-        muaina.medicalCondition.icdCode = sanitizeIcdCode(muaina.medicalCondition.icdCode);
+      const content = message.content[0];
+      if (content.type !== "text") {
+        throw new Error("Unexpected response type from Claude");
       }
-      result.muainaInterpretation = muaina;
-    }
 
-    return result;
-  } catch (error) {
-    console.error("Claude analysis error:", error);
-    throw new Error(
-      `AI analysis failed: ${error instanceof Error ? error.message : "Unknown error"}. Please retry the upload.`
-    );
+      // Parse the JSON response - strip markdown code blocks if present
+      let jsonText = content.text.trim();
+      if (jsonText.startsWith("```")) {
+        // Remove opening ```json or ``` and closing ```
+        jsonText = jsonText.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+      }
+      const analysis = JSON.parse(jsonText);
+
+      // Calculate usage and cost
+      // Claude Sonnet 4 pricing (as of 2025):
+      // Input: $3 per million tokens
+      // Output: $15 per million tokens
+      const inputTokens = message.usage?.input_tokens || 0;
+      const outputTokens = message.usage?.output_tokens || 0;
+      const inputCost = (inputTokens / 1_000_000) * 3;
+      const outputCost = (outputTokens / 1_000_000) * 15;
+      const totalCostUSD = inputCost + outputCost;
+
+      const usage: AIUsageStats = {
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        estimatedCostUSD: Math.round(totalCostUSD * 1_000_000) / 1_000_000, // Round to 6 decimal places
+        model: modelId,
+        apiCalls: totalApiCalls,
+      };
+
+      // Log usage for monitoring
+      console.log(`[AI Usage] Model: ${modelId}, Input: ${inputTokens}, Output: ${outputTokens}, Cost: $${usage.estimatedCostUSD.toFixed(6)}${attempt > 1 ? ` (retry #${attempt - 1})` : ''}`);
+
+      const result: AnalysisResult = {
+        classification: analysis.classification,
+        findings: analysis.findings || [],
+        draftReport: {
+          summary: analysis.summary,
+          details: analysis.details,
+        },
+        processingTime: Date.now() - startTime,
+        usage,
+      };
+
+      // Include patient info if extracted
+      if (analysis.patientInfo?.name) {
+        result.patientInfo = {
+          name: analysis.patientInfo.name,
+          age: analysis.patientInfo.age || undefined,
+          gender: analysis.patientInfo.gender || undefined,
+          dob: analysis.patientInfo.dob || undefined,
+        };
+      }
+
+      // Include Muaina Interpretation for ALL reports
+      if (analysis.muainaInterpretation) {
+        // Validate and sanitize ICD code from AI response
+        const muaina = analysis.muainaInterpretation;
+        if (muaina.medicalCondition) {
+          muaina.medicalCondition.icdCode = sanitizeIcdCode(muaina.medicalCondition.icdCode);
+        }
+        result.muainaInterpretation = muaina;
+      }
+
+      return result;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const errorMsg = lastError.message;
+
+      // Determine if error is retryable (transient)
+      const isRetryable =
+        errorMsg.includes("timed out") ||
+        errorMsg.includes("rate limit") ||
+        errorMsg.includes("429") ||
+        errorMsg.includes("500") ||
+        errorMsg.includes("503") ||
+        errorMsg.includes("overloaded") ||
+        errorMsg.includes("ECONNRESET") ||
+        errorMsg.includes("ETIMEDOUT");
+
+      if (isRetryable && attempt < MAX_RETRIES) {
+        const delayMs = 2000 * attempt; // 2s, 4s, etc.
+        console.warn(`[AI Retry] Attempt ${attempt} failed (${errorMsg}), retrying in ${delayMs}ms...`);
+        await new Promise(r => setTimeout(r, delayMs));
+        continue;
+      }
+
+      // Non-retryable error or last attempt — throw
+      console.error(`[AI Error] Attempt ${attempt}/${MAX_RETRIES} failed:`, errorMsg);
+      break;
+    }
   }
+
+  throw new Error(
+    `AI analysis failed: ${lastError?.message || "Unknown error"}. Please retry the upload.`
+  );
 }
 
 function generateMockAnalysis(reportText: string, organizationDoctors: Doctor[] = []): AnalysisResult {
