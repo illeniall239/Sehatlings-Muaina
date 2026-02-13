@@ -18,8 +18,13 @@ import {
   Sparkles,
   TrendingUp,
   AlertCircle,
+  Package,
+  Clock,
+  Ban,
+  CheckCircle2,
+  BadgeDollarSign,
 } from "lucide-react";
-import type { InsuranceSummary } from "@/types/database";
+import type { InsuranceSummary, InsurancePackage } from "@/types/database";
 
 interface PatientReport {
   id: string;
@@ -182,6 +187,21 @@ export default function PatientSummaryPage({
         return "bg-warning-100 text-warning-700";
       default:
         return "bg-success-100 text-success-700";
+    }
+  };
+
+  const formatPKR = (amount: number) => {
+    if (amount >= 1000000) return `PKR ${(amount / 1000000).toFixed(1)}M`;
+    if (amount >= 1000) return `PKR ${(amount / 1000).toFixed(0)}K`;
+    return `PKR ${amount.toLocaleString()}`;
+  };
+
+  const getTierColor = (tier: InsurancePackage["tier"]) => {
+    switch (tier) {
+      case "Platinum": return { bg: "bg-purple-50", border: "border-purple-200", badge: "bg-purple-100 text-purple-800", accent: "text-purple-700" };
+      case "Premium": return { bg: "bg-amber-50", border: "border-amber-200", badge: "bg-amber-100 text-amber-800", accent: "text-amber-700" };
+      case "Standard": return { bg: "bg-blue-50", border: "border-blue-200", badge: "bg-blue-100 text-blue-800", accent: "text-blue-700" };
+      default: return { bg: "bg-neutral-50", border: "border-neutral-200", badge: "bg-neutral-100 text-neutral-700", accent: "text-neutral-600" };
     }
   };
 
@@ -393,6 +413,154 @@ export default function PatientSummaryPage({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Suggested Insurance Packages */}
+      {summary && summary.suggested_packages && summary.suggested_packages.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100">
+              <Package className="h-5 w-5 text-primary-800" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-neutral-900">
+                Suggested Insurance Packages
+              </h2>
+              <p className="text-sm text-neutral-500">
+                AI-recommended packages based on patient risk profile
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {summary.suggested_packages.map((pkg) => {
+              const colors = getTierColor(pkg.tier);
+              const adjustPct = pkg.premium_adjustment.adjustment_percentage;
+              return (
+                <Card
+                  key={pkg.tier}
+                  className={`relative overflow-hidden ${colors.border} ${pkg.recommended ? "ring-2 ring-primary-400" : ""}`}
+                >
+                  {pkg.recommended && (
+                    <div className="absolute top-0 right-0 px-3 py-1 bg-primary-600 text-white text-xs font-semibold rounded-bl-lg">
+                      <CheckCircle2 className="h-3 w-3 inline mr-1" />
+                      Recommended
+                    </div>
+                  )}
+                  <CardHeader className={`${colors.bg} pb-3`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${colors.badge}`}>
+                        {pkg.tier}
+                      </span>
+                      {adjustPct !== 0 && (
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          adjustPct > 0 ? "bg-destructive-100 text-destructive-700" : "bg-success-100 text-success-700"
+                        }`}>
+                          {adjustPct > 0 ? "+" : ""}{adjustPct}% adjustment
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <p className={`text-2xl font-bold ${colors.accent}`}>
+                        {formatPKR(pkg.annual_premium)}
+                        <span className="text-sm font-normal text-neutral-500">/year</span>
+                      </p>
+                      <p className="text-sm text-neutral-500">
+                        {formatPKR(pkg.monthly_premium)}/month
+                      </p>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-4 space-y-4">
+                    {/* Coverage Limits */}
+                    <div>
+                      <p className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <BadgeDollarSign className="h-3.5 w-3.5" />
+                        Coverage Limits
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { label: "IPD", value: pkg.coverage.ipd_limit },
+                          { label: "OPD", value: pkg.coverage.opd_limit },
+                          { label: "Maternity", value: pkg.coverage.maternity_limit },
+                          { label: "Critical Illness", value: pkg.coverage.critical_illness_limit },
+                        ].map((item) => (
+                          <div key={item.label} className="p-2 rounded-lg bg-neutral-50">
+                            <p className="text-xs text-neutral-500">{item.label}</p>
+                            <p className="text-sm font-semibold text-neutral-900">
+                              {item.value === 0 ? "Not covered" : formatPKR(item.value)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Key Terms */}
+                    <div className="flex gap-3 text-sm">
+                      <div className="flex-1 p-2 rounded-lg bg-neutral-50 text-center">
+                        <p className="text-xs text-neutral-500">Deductible</p>
+                        <p className="font-semibold">{pkg.deductible === 0 ? "None" : formatPKR(pkg.deductible)}</p>
+                      </div>
+                      <div className="flex-1 p-2 rounded-lg bg-neutral-50 text-center">
+                        <p className="text-xs text-neutral-500">Room Rent</p>
+                        <p className="font-semibold">{formatPKR(pkg.room_rent_cap)}/day</p>
+                      </div>
+                      <div className="flex-1 p-2 rounded-lg bg-neutral-50 text-center">
+                        <p className="text-xs text-neutral-500">Co-Insurance</p>
+                        <p className="font-semibold">{pkg.co_insurance_percentage === 0 ? "None" : `${pkg.co_insurance_percentage}%`}</p>
+                      </div>
+                    </div>
+
+                    {/* Waiting Periods */}
+                    {pkg.waiting_periods.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5" />
+                          Waiting Periods
+                        </p>
+                        <ul className="space-y-1">
+                          {pkg.waiting_periods.map((wp, i) => (
+                            <li key={i} className="text-xs text-neutral-600 flex items-start gap-1.5">
+                              <span className="mt-1.5 h-1 w-1 rounded-full bg-neutral-400 shrink-0" />
+                              {wp}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Exclusions */}
+                    {pkg.exclusions.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <Ban className="h-3.5 w-3.5" />
+                          Exclusions
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {pkg.exclusions.map((ex, i) => (
+                            <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">
+                              {ex}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Justification */}
+                    <div className={`p-3 rounded-lg border ${pkg.recommended ? "bg-primary-50 border-primary-200" : "bg-neutral-50 border-neutral-150"}`}>
+                      <p className="text-xs font-medium text-neutral-500 mb-1">AI Justification</p>
+                      <p className="text-sm text-neutral-700 leading-relaxed">{pkg.justification}</p>
+                    </div>
+
+                    {/* Base Premium Note */}
+                    <p className="text-xs text-neutral-400">
+                      Base premium: {formatPKR(pkg.premium_adjustment.base_premium)} &middot; {pkg.premium_adjustment.adjustment_reason}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* Reports Section */}

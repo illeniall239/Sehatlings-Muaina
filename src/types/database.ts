@@ -402,6 +402,33 @@ export type UserRole = User['role'];
 // Patient info extracted from reports
 export type PatientInfo = NonNullable<Report['patient_info']>;
 
+// Insurance package types
+export interface InsurancePackageCoverage {
+  ipd_limit: number;
+  opd_limit: number;
+  maternity_limit: number;
+  critical_illness_limit: number;
+}
+
+export interface InsurancePackage {
+  tier: 'Basic' | 'Standard' | 'Premium' | 'Platinum';
+  annual_premium: number;
+  monthly_premium: number;
+  coverage: InsurancePackageCoverage;
+  deductible: number;
+  room_rent_cap: number;
+  co_insurance_percentage: number;
+  waiting_periods: string[];
+  exclusions: string[];
+  premium_adjustment: {
+    base_premium: number;
+    adjustment_percentage: number;
+    adjustment_reason: string;
+  };
+  justification: string;
+  recommended: boolean;
+}
+
 // Insurance summary types
 export interface InsuranceSummary {
   patient_name: string;
@@ -420,6 +447,7 @@ export interface InsuranceSummary {
   health_summary: string;
   chronic_conditions: string[];
   recommendations: string[];
+  suggested_packages: InsurancePackage[];
   generated_at: string;
 }
 
